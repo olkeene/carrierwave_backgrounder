@@ -8,6 +8,20 @@ module CarrierWave
       ##
       # Base class for all things orm
       module Base
+        ##
+        # You can specify background jobs library:
+        # CarrierWave::Backgrounder::ORM::Base.process_enqueue = lambda{|worker, klass, column, id| ::Delayed::Job.enqueue(worker.new(klass, id, column.mounted_as)) }
+        # Redis sample:
+        # lambda{|worker, klass, column, id| ::Resque.enqueue(worker, klass, id, column.mounted_as) }
+        #
+        def self.process_enqueue=(proc)
+          raise "#{proc} is not a Proc" unless proc.class == Proc
+          @@process_enqueue = proc
+        end
+
+        def process_enqueue
+          @@process_enqueue ||= lambda{|worker, klass, column, id| ::Delayed::Job.enqueue(worker.new(klass, id, column.mounted_as)) }
+        end
 
         ##
         # User#process_in_background will process and create versions in a background process.
@@ -50,7 +64,7 @@ module CarrierWave
             end
 
             def enqueue_#{column}_background_job
-              ::Delayed::Job.enqueue #{worker}.new(self.class, id, #{column}.mounted_as)
+              self.class.process_enqueue.call(#{worker}, self.class, #{column}, id)
             end
 
             def trigger_#{column}_background_processing?
@@ -98,7 +112,7 @@ module CarrierWave
             end
 
             def enqueue_#{column}_background_job
-              ::Delayed::Job.enqueue #{worker}.new(self.class, id, #{column}.mounted_as)
+              self.class.process_enqueue.call(#{worker}, self.class, #{column}, id)
             end
 
             def trigger_#{column}_background_storage?
